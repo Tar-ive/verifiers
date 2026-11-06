@@ -57,6 +57,17 @@ def lift(acc: float, base: float) -> float:
     return max(0.0, (acc - base) / (1 - base)) if base < 1 else float(acc == 1)
 
 
+def baseline(mode: str, function: str, net: Net | None) -> float:
+    """Accuracy of doing nothing: the best constant output, or in fix mode the corrupted net as
+    shown if that is better. (With the corrupted net alone, an edit that silences the network
+    was paid the lift wherever the corruption had dropped the net below a constant output.)"""
+    ones = sum(target_table(function))
+    const = max(ones, len(INPUTS) - ones) / len(INPUTS)
+    if mode == "fix" and net is not None:
+        return max(float(accuracy(net, function)), const)
+    return const
+
+
 class WeightSpaceData(vf.TaskData):
     seed: int
     mode: str
@@ -85,11 +96,7 @@ class WeightSpaceTask(vf.Task[WeightSpaceData]):
         return float(accuracy(net, self.data.function)) if net else 0.0
 
     def _baseline(self) -> float:
-        """Accuracy of doing nothing: the corrupted net (fix) or the best constant output (write)."""
-        if self.data.mode == "fix":
-            return float(accuracy(Net.from_json(self.data.net), self.data.function))
-        ones = sum(target_table(self.data.function))
-        return max(ones, len(INPUTS) - ones) / len(INPUTS)
+        return baseline(self.data.mode, self.data.function, Net.from_json(self.data.net) if self.data.net else None)
 
     @vf.reward(weight=1.0)
     async def weight_score(self, trace: vf.Trace) -> float:

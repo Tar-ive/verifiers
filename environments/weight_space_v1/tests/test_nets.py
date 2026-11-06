@@ -2,7 +2,7 @@ import json
 
 from weight_space_v1.nets import (FUNCTIONS, MAX_WRITE_HIDDEN, Net, accuracy, apply_edits, functional_units, generate,
                                   net_from_answer, reference_net, render_prompt, spec_from_prompt, target_table)
-from weight_space_v1.taskset import lift, parse_answer, unit_prf
+from weight_space_v1.taskset import baseline, lift, parse_answer, unit_prf
 
 
 def test_reference_constructions_are_exact_and_fit_the_write_budget():
@@ -72,3 +72,17 @@ def test_parse_takes_the_real_block():
     assert parse_answer(f"{block}\n<answer>{{}}</answer>") == {}
     assert parse_answer("<answer>{\"c\": " + "1" * 5000 + "}</answer>") is None  # not a crash
     assert parse_answer("<answer>" + "[" * 100000 + "]" * 100000 + "</answer>") is None
+
+
+def test_fix_baseline_pays_nothing_for_a_constant_output():
+    for seed in range(10):
+        for name in FUNCTIONS:
+            spec = generate(seed, "fix", name)
+            base = baseline("fix", name, spec.net)
+            for value in (-1000, 1000):  # every output 0, every output 1: nothing read from the weights
+                silenced = apply_edits(spec.net, [{"param": "c", "value": value}])
+                assert lift(float(accuracy(silenced, name)), base) == 0.0
+            loc = spec.expected["corruption"]
+            edit = {k: loc[k] for k in ("param", "row", "col") if k in loc} | {"value": loc["original"]}
+            assert lift(float(accuracy(apply_edits(spec.net, [edit]), name)), base) == 1.0
+
